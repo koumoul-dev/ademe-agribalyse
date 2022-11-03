@@ -4,8 +4,7 @@ const fs = require('fs-extra')
 const parse = require('csv-parse/lib/sync')
 const stringify = require('csv-stringify/lib/sync')
 
-// const fileName = 'AGRIBALYSE3.0.1_vf.xlsm'
-const fileName = 'AGRIBALYSE3.1_produits alimentaires_vf.xlsm'
+const fileName = 'AGRIBALYSE3.1_produits alimentaires_2.xlsm'
 
 const workbook = XLSX.readFile(path.join(__dirname, 'in', fileName))
 fs.ensureDirSync(path.join(__dirname, 'out'))
@@ -13,39 +12,31 @@ fs.ensureDirSync(path.join(__dirname, 'out'))
 console.log('generating synthesis CSV')
 const synthesisWS = workbook.Sheets[workbook.SheetNames[1]]
 let csvToks = XLSX.utils.sheet_to_csv(synthesisWS, {FS:';', rawNumbers: true}).replace(/\r\n/g, ' ').split('\n')
-const synthesisCsvString = stringify(parse(csvToks[1]+'\n'+csvToks.slice(3).filter(l => l.length > 26).join('\n'), {delimiter: ';'}))
+const synthesisHeaders = stringify([parse(csvToks[2], {delimiter: ';'})[0].slice(0,12).map(d => d.split(' (')[0])]).split(' - ')[0]+','+ stringify([parse(csvToks[1], {delimiter: ';'})[0].slice(12).map(d => d.replace(' 3.1', ''))])
+const synthesisCsvString = synthesisHeaders+stringify(parse(csvToks.slice(3).filter(l => l.length > 26).join('\n'), {delimiter: ';'}))
 fs.writeFileSync(path.join(__dirname, 'out','Agribalyse_' + workbook.SheetNames[1]+'.csv'), synthesisCsvString)
 
 console.log('generating steps details CSV')
 const stepsWS = workbook.Sheets[workbook.SheetNames[2]]
 csvToks = XLSX.utils.sheet_to_csv(stepsWS, {FS:';', rawNumbers: true}).replace(/\r\n/g, ' ').split('\n')
-// const stepsCategories = csvToks[0].split(';').filter(f => f.length).slice(1, -1).map(f => f.split(/\s+(par|\()/)[0].replace(/"/g, ''))
-const stepsCategories = csvToks[0].split(';').filter(f => f.length).slice(1, -1).map(f => f.replace(/"/g, ''))
-const stepsHeaders = csvToks[3].split(';').map((f,i) => {
-  if(i<=7 || i >= 127) return f
-  else if(i>7 && i < 15) return 'Score unique EF (mPt / kg de produit)' + ' - ' + f
-  else return stepsCategories[Math.floor((i-8)/7)] + ' - ' + f
+const stepsCategories = parse(csvToks[0], {delimiter: ';'})[0].filter(f => f.length).slice(1,-1).map(f => f.split(' 3.1')[0])
+stepsCategories.push('DQR')
+const stepsHeaders = csvToks[2].split(';').map((f,i) => {
+  if(i<=7) return f
+  else return stepsCategories[Math.floor((i-8)/7)] + ' - ' + f.replace('"DQR  Overall"', 'Global')
 })
-// console.log(stepsHeaders)
-const excludes = []
+const excludes = [6, 7]
 stepsHeaders.forEach((f, i) => {if(f.split(' - ').pop() === 'Total') excludes.push(i)})
-const stepsCsvString = stringify(parse(stepsHeaders.filter((s, i) => !excludes.includes(i)).join(';') + '\n' +csvToks.slice(4).map(l => l.split(';').filter((s, i) => !excludes.includes(i)).map(s => s !== '-' ? s : '').join(';')).filter(l => l.length > 101).join('\n'), {delimiter: ';'}))
+const stepsCsvStringHeader = stringify([stepsHeaders.filter((s, i) => !excludes.includes(i))])
+const stepsCsvStringBody = stringify(csvToks.slice(3).map(l => l.split(';').filter((s, i) => !excludes.includes(i)).map(s => s !== '-' ? s : '')).filter(l => l.length > 101))
+const stepsCsvString = stepsCsvStringHeader + stepsCsvStringBody
 fs.writeFileSync(path.join(__dirname, 'out','Agribalyse_' + workbook.SheetNames[2]+'.csv'), stepsCsvString)
 
 console.log('generating ingredients details CSV')
 const ingredientsWS = workbook.Sheets[workbook.SheetNames[3]]
 const sheetCsv = XLSX.utils.sheet_to_csv(ingredientsWS, {FS:';', rawNumbers: true})
-csvToks = sheetCsv.replace(/\r\n/g, ' ').split('\n').slice(3)
-
-const ingredientsHeaders = csvToks[0].split(';').slice(0, 27).map(h => h.replace(/"/g, '').replace(/\s+/g, ' '))
-// console.log(ingredientsHeaders)
-let lines = csvToks.slice(1).map(r => r.split(';').slice(0, 27))
-lines.forEach((line, i) => {
-  line.forEach((cell, j)=> {
-    if(!cell) line[j] = lines[i-1][j]
-  })
-})
-
-lines = lines.filter(line => line.length === 27 && line[6] !== 'Total')
-const ingredientsCsvString = stringify(parse(ingredientsHeaders.filter((h, i) => i<7 || i > 9).join(';')+'\n'+lines.map(line => line.filter((d, i) => i<7 || i > 9).map(s => s !== '-' ? s : '').join(';')).join('\n'), {delimiter: ';'}))
+csvToks = sheetCsv.replace(/\r\n/g, ' ').split('\n').slice(2)
+const ingredientsHeaders = [].concat(parse(csvToks[1], {delimiter: ';'})[0].slice(0,10),parse(csvToks[0], {delimiter: ';'})[0].slice(10, 27).map(f => f.split(' 3.1')[0]))
+const lines = csvToks.slice(2).map(r => r.split(';').slice(0, 27)).filter(line => line.length === 27 && line[6] !== 'Total')
+const ingredientsCsvString = stringify([ingredientsHeaders.filter((h, i) => i<7 || i > 9)]) + stringify(lines.map(line => line.filter((d, i) => i<7 || i > 9).map(s => s !== '-' ? s : '')))
 fs.writeFileSync(path.join(__dirname, 'out','Agribalyse_' + workbook.SheetNames[3]+'.csv'), ingredientsCsvString)
