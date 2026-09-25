@@ -6,5 +6,4 @@ In this directory :
 ```
 npm install
 node generateCSV.js
-node generateJSON.js
 ```
